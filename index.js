@@ -23,6 +23,7 @@ const rsvpNo = document.getElementById('rsvp-no');
 
 var rsvpListener = null;
 var guestbookListener = null;
+var currentChat = null;
 
 // Add Firebase project configuration object here
   // Your web app's Firebase configuration
@@ -73,22 +74,22 @@ startRsvpButton.addEventListener("click",
 // ...
 // Listen to the current Auth state
 firebase.auth().onAuthStateChanged((user) => {
-if (user){
-  startRsvpButton.textContent = "LOGOUT";
-  // Show guestbook to logged-in users
-  guestbookContainer.style.display = "block";
+  if (user){
+    startRsvpButton.textContent = "LOGOUT";
+    // Show guestbook to logged-in users
+    guestbookContainer.style.display = "block";
 
-  // Subscribe to the guestbook collection
-  subscribeGuestbook();
-}
-else{
-  startRsvpButton.textContent = "RSVP";
-  // Hide guestbook for non-logged-in users
-  guestbookContainer.style.display = "none";
+    // Subscribe to the guestbook collection
+    subscribeGuestbook();
+  }
+  else{
+    startRsvpButton.textContent = "RSVP";
+    // Hide guestbook for non-logged-in users
+    guestbookContainer.style.display = "none";
 
-  // Unsubscribe from the guestbook collection
-  unsubscribeGuestbook();
-}
+    // Unsubscribe from the guestbook collection
+    unsubscribeGuestbook();
+  }
 });
 
 // Listen to the form submission
@@ -96,12 +97,20 @@ form.addEventListener("submit", (e) => {
  // Prevent the default form redirect
  e.preventDefault();
  // Write a new message to the database collection "guestbook"
- firebase.firestore().collection("guestbook").add({
+ /*firebase.firestore().collection("guestbook").add({
    text: input.value,
    timestamp: Date.now(),
    name: firebase.auth().currentUser.displayName,
    userId: firebase.auth().currentUser.uid
- })
+ })*/
+ if (currentChat != null) {
+  firebase.firestore().collection("chats").doc(currentChat).collection("messages").add(
+    {
+      person: firebase.auth().currentUser.uid,
+      text: input.value
+    }
+  );
+ }
  // clear message input field
  input.value = ""; 
  // Return false to avoid redirect
@@ -128,7 +137,7 @@ firebase.auth().onAuthStateChanged((user) => {
 });
 
 // Create query for messages
-firebase.firestore().collection("guestbook")
+/*firebase.firestore().collection("guestbook")
   .orderBy("timestamp","desc")
   .onSnapshot((snaps) => {
   // Reset page
@@ -140,7 +149,7 @@ firebase.firestore().collection("guestbook")
     entry.textContent = doc.data().name + ": " + doc.data().text;
     guestbook.appendChild(entry);
   });
-});
+});*/
 
 // Listen to guestbook updates
 function subscribeGuestbook(){
@@ -187,6 +196,13 @@ function displayProfile(userId, domElem) {
 
       domElem.innerHTML = profile.name;
       domElem.innerHTML += "<button id='chat_with_" + doc.data().userId + "'>chat</button>";
+      var button = document.getElementById("chat_with_" + doc.data().userId);
+      button.targetUserId = doc.data().userId;
+      document.getElementById("chat_with_" + doc.data().userId).addEventListener("click", 
+        (event) => {
+          createChat(event.currentTarget.targetUserId);
+        }
+      );
     }
   );
 };
@@ -267,15 +283,53 @@ function getAndDisplayMatches() {
   firebase.firestore().collection("questionaires").doc(firebase.auth().currentUser.uid).get().then(
     function(doc) {
       if (doc.exists) {
-        matches = [
+        var matches = [
           doc.data.q1,
           doc.data.q2,
           doc.data.q3
         ];
 
         var matchesContainer = document.getElementById("matches-display");
-        var matches = displayMatches(firebase.auth().currentUser.uid, [q1, q2, q3], matchesContainer);
+        displayMatches(firebase.auth().currentUser.uid, [q1, q2, q3], matchesContainer);
       }
+    }
+  );
+}
+
+function showChatData() {
+  firebase.firestore().collection("chats").doc(currentChat).collection("chats").get().then( function(querySnapshot) {
+  var matches = [];
+  guestbook.innerHTML = "";
+  console.log("Beginning");
+  querySnapshot.forEach(function(doc) {
+    console.log("Iterating!");
+    const entry = document.createElement("p");
+    entry.textContent = doc.data().person + ": " + doc.data().text;
+    guestbook.appendChild(entry);
+  });
+  });
+}
+
+function displayChat(name) {
+  console.log("openingChat: " + "chats/" + name + "/messages");
+  currentChat = name;
+  console.log("using chat: " + name);
+  var dbchat = firebase.firestore().collection("chats").doc(currentChat).collection("messages");
+  console.log(dbchat);
+  dbchat.orderBy("timestamp","desc").onSnapshot((snaps) => {
+      console.log("Got chat update!");
+      // Reset page
+      guestbook.innerHTML = "";
+      // Loop through documents in database
+      snaps.forEach((doc) => {
+          // Create an HTML entry for each document and add it to the chat
+          console.log(doc.data());
+          const entry = document.createElement("p");
+          entry.textContent = doc.data().person + ": " + doc.data().text;
+          guestbook.appendChild(entry);
+        }
+      );
+      //showChatData();
     }
   );
 }
@@ -286,19 +340,31 @@ var createChat = function(withUserId) {
 
   possibleChats.get().then(
     function(querySnapshot) {
-      console.log("MADE QUERY");
-      console.log(querySnapshot);
+      var found = false;
+
       querySnapshot.forEach(
         function(doc) {
-          // doc.data() is never undefined for query doc snapshots
-            console.log(doc.data());
-
+          console.log(doc.data().people);
           if (doc.data().people.indexOf(withUserId) != -1) {
-            var docId = doc.id;
-            
+            if (!found) {
+              var docId = doc.id;
+              displayChat(docId);
+              found = true;
+              console.log("foundChat!");
+            }
           }
         }
       );
+
+      if (!found) {
+        firebase.firestore().collection("chats").add(
+          {
+            people: [userId, withUserId],
+          }
+        ).then(
+          function(docRef) {displayChat(docRef.id);}
+        );
+      }
     }
   );
 };
