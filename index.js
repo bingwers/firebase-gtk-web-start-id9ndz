@@ -14,6 +14,7 @@ const startRsvpButton = document.getElementById('startRsvp');
 const guestbookContainer = document.getElementById('guestbook-container');
 
 const form = document.getElementById('leave-message');
+const questionaireForm = document.getElementById('questionaire');
 const input = document.getElementById('message');
 const guestbook = document.getElementById('guestbook');
 const numberAttending = document.getElementById('number-attending');
@@ -112,6 +113,12 @@ firebase.auth().onAuthStateChanged((user) => {
    startRsvpButton.textContent = "LOGOUT";
    // Show guestbook to logged-in users
    guestbookContainer.style.display = "block";
+   getAndDisplayMatches();
+
+   firebase.firestore().collection("questionaires")
+    .orderBy("timestamp","desc").onSnapshot((snaps) => {
+      getAndDisplayMatches();
+  });
  }
  else{
    startRsvpButton.textContent = "RSVP";
@@ -122,17 +129,17 @@ firebase.auth().onAuthStateChanged((user) => {
 
 // Create query for messages
 firebase.firestore().collection("guestbook")
-.orderBy("timestamp","desc")
-.onSnapshot((snaps) => {
- // Reset page
- guestbook.innerHTML = "";
- // Loop through documents in database
- snaps.forEach((doc) => {
-   // Create an HTML entry for each document and add it to the chat
-   const entry = document.createElement("p");
-   entry.textContent = doc.data().name + ": " + doc.data().text;
-   guestbook.appendChild(entry);
- });
+  .orderBy("timestamp","desc")
+  .onSnapshot((snaps) => {
+  // Reset page
+  guestbook.innerHTML = "";
+  // Loop through documents in database
+  snaps.forEach((doc) => {
+    // Create an HTML entry for each document and add it to the chat
+    const entry = document.createElement("p");
+    entry.textContent = doc.data().name + ": " + doc.data().text;
+    guestbook.appendChild(entry);
+  });
 });
 
 // Listen to guestbook updates
@@ -159,6 +166,141 @@ function unsubscribeGuestbook(){
    guestbookListener();
    guestbookListener = null;
  }
+};
+
+function sq(x) {
+    return x*x;
+}
+
+function displayProfile(userId, domElem) {
+  var profile = {};
+
+  console.log("Retreiving profile for " + userId);
+  firebase.firestore().collection("questionaires").doc(userId).get().then(
+    function(doc) {
+      if (doc.exists) {
+        profile.name = doc.data().name;
+      }
+      else {
+        profile.name = "none";
+      }
+
+      domElem.innerHTML = profile.name;
+      domElem.innerHTML += "<button id='chat_with_" + doc.data().userId + "'>chat</button>";
+    }
+  );
+};
+
+function displayMatches(userId, scores, matchesContainer) {
+
+  firebase.firestore().collection("questionaires").get().then( function(querySnapshot) {
+    var matches = [];
+
+      querySnapshot.forEach(function(doc) {
+        if (doc.data().userId != userId) {
+          var elem;
+          var diff = sq(Number(doc.data().q1) - scores[0])
+            + sq(Number(doc.data().q2) - scores[1])
+            + sq(Number(doc.data().q3) - scores[2]);
+          var l = matches.length;
+          var i;
+          var match = {userId: doc.data().userId, diff: diff};
+          for (i = 0; i < l; i++) {
+            if (diff > matches[i].diff) {
+              matches.splice(i, 0, match);
+              break;
+            }
+          }
+          if (i == l && l < 5) {
+            matches.push(match);
+          }
+
+          if (matches.length > 5) {
+            matches.pop();
+          }
+        }
+      }
+      );
+
+      matchesContainer.innerHTML = "";
+      matches.forEach(
+        function(item) {
+          var domElem = document.createElement("li");
+          matchesContainer.appendChild(domElem);
+          displayProfile(item.userId, domElem);
+        }
+      );
+    }
+  );
+};
+
+// Listen to the form submission
+questionaireForm.addEventListener("submit", (e) => {
+  // Prevent the default form redirect
+  e.preventDefault();
+
+  var q1 = document.getElementById("q1").value;
+  var q2 = document.getElementById("q2").value;
+  var q3 = document.getElementById("q3").value;
+
+  // Write a new message to the database collection "guestbook"
+  firebase.firestore().collection("questionaires").doc(firebase.auth().currentUser.uid).set({
+    q1: document.getElementById("q1").value,
+    q2: document.getElementById("q2").value,
+    q3: document.getElementById("q3").value,
+    timestamp: Date.now(),
+    name: firebase.auth().currentUser.displayName,
+    userId: firebase.auth().currentUser.uid
+  });
+
+  var matchesContainer = document.getElementById("matches-display");
+  //var matches = displayMatches(firebase.auth().currentUser.uid, [q1, q2, q3], matchesContainer);
+
+  document.getElementById("q1").value = "";
+  document.getElementById("q2").value = "";
+  document.getElementById("q3").value = "";
+  // Return false to avoid redirect
+  return false;
+});
+
+function getAndDisplayMatches() {
+  firebase.firestore().collection("questionaires").doc(firebase.auth().currentUser.uid).get().then(
+    function(doc) {
+      if (doc.exists) {
+        matches = [
+          doc.data.q1,
+          doc.data.q2,
+          doc.data.q3
+        ];
+
+        var matchesContainer = document.getElementById("matches-display");
+        var matches = displayMatches(firebase.auth().currentUser.uid, [q1, q2, q3], matchesContainer);
+      }
+    }
+  );
+}
+
+var createChat = function(withUserId) {
+  var userId = firebase.auth().currentUser.uid;
+  var possibleChats = firebase.firestore().collection("chats").where("people", "array-contains", userId);
+
+  possibleChats.get().then(
+    function(querySnapshot) {
+      console.log("MADE QUERY");
+      console.log(querySnapshot);
+      querySnapshot.forEach(
+        function(doc) {
+          // doc.data() is never undefined for query doc snapshots
+            console.log(doc.data());
+
+          if (doc.data().people.indexOf(withUserId) != -1) {
+            var docId = doc.id;
+            
+          }
+        }
+      );
+    }
+  );
 };
 
 // const ui = new firebaseui.auth.AuthUI(firebase.auth());
